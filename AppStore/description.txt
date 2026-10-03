@@ -1,0 +1,21 @@
+Swarm Gate — hold the line.
+
+A portrait-only, one-thumb zombie-wave lane-defense game that runs entirely on your iPhone. Waves of stylized monsters march down in tight columns, converging the moment they get close. You defend the gate at the bottom of the screen with rapid fire, limited-use weapons, and well-timed bombs.
+
+Every wave is a decision. Power-ups stack your firepower a little at a time — but some of them are curses disguised as gifts, sitting right in front of a deadly cluster. Nothing is ever forced on you: you always choose whether to take the buff or eat the debuff. Every few waves a lumbering boss blocks the lane and dares you to spend your bombs wisely.
+
+Runs are quick and honest. Each run is seeded, so a friend can type in the same seed code and face the exact same horde, and every personal best is stored fairly on your device. If your data is incomplete, Swarm Gate says so instead of inventing a record.
+
+Why you'll like it:
+- Classic wave-defense action, modern deterministic engine: same seed, same horde, every time.
+- Choose-your-fate pickups: buffs, bombs, limited weapons, and power-downs you must consciously accept.
+- Boss zombies with big health bars and mean schedules.
+- Endless mode and seeded challenge runs with shareable seed codes (offline, face to face).
+- Personal bests, run ledgers, CSV export, and full JSON backups that stay on your device.
+- No accounts. No cloud. No ads. No subscriptions. No energy timers. No trackers.
+
+Privacy first: Swarm Gate makes no network connections at all. Your runs, records, and settings never leave your iPhone unless you choose to export or back them up yourself.
+
+Swarm Gate is designed for iPhone and optimized for one-handed portrait play. Accessibility-friendly menus, Dynamic Type support, and reduce-motion options.
+
+Get to the gate. Hold the line.
