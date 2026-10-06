@@ -1,0 +1,75 @@
+name: Native iPhone CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  linux-packages:
+    runs-on: ubuntu-latest
+    container:
+      image: swift:6.2-noble
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install SQLite headers
+        run: apt-get update && apt-get install -y --no-install-recommends libsqlite3-dev python3
+      - name: Enforce project contract and mutation tests
+        run: |
+          python3 scripts/check_contract.py
+          python3 -m unittest discover -s scripts -p 'test_*.py' -v
+      - name: Test pure engine package
+        run: swift test --package-path Packages/SwarmGateKit
+      - name: Test GRDB store package
+        run: swift test --package-path Packages/SwarmGateStore
+  ios-build:
+    runs-on: macos-26
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enforce project contract and mutation tests
+        run: |
+          python3 scripts/check_contract.py
+          python3 -m unittest discover -s scripts -p 'test_*.py' -v
+      - name: Select exact Xcode and build iPhone app
+        shell: bash
+        run: |
+          set -euo pipefail
+          pick=''
+          for candidate in /Applications/Xcode*.app/Contents/Developer; do
+            [[ -d "$candidate" ]] || continue
+            version=$(DEVELOPER_DIR="$candidate" xcodebuild -version)
+            if [[ "$version" == $'Xcode 26.0.1\nBuild version 17A400' ]]; then
+              pick="$candidate"
+              break
+            fi
+          done
+          [[ -n "$pick" ]] || { echo 'Exact Xcode 26.0.1 (17A400) unavailable'; exit 1; }
+          export DEVELOPER_DIR="$pick"
+          xcodebuild -version
+          sdk=$(xcrun --sdk iphoneos --show-sdk-version)
+          [[ "$sdk" == 26.0 ]] || { echo "Expected iPhoneOS SDK 26.0; got $sdk"; exit 1; }
+          # Hosted images may include the pinned Xcode but omit its matching
+          # platform download. Do not silently switch to a newer Xcode.
+          if ! xcodebuild -project SwarmGate.xcodeproj -scheme SwarmGate \
+            -showdestinations 2>&1 | tee "$RUNNER_TEMP/destinations.txt"; then
+            echo 'Could not inspect build destinations'; exit 1
+          fi
+          if ! grep -Fq 'Any iOS Simulator Device' "$RUNNER_TEMP/destinations.txt"; then
+            echo 'Pinned iOS 26 platform unavailable; downloading for exact Xcode'
+            xcodebuild -downloadPlatform iOS -architectureVariant universal
+          fi
+          xcodebuild build -project SwarmGate.xcodeproj -scheme SwarmGate \
+            -configuration Debug -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/SwarmGateDerivedData" CODE_SIGNING_ALLOWED=NO
+          info="$RUNNER_TEMP/SwarmGateDerivedData/Build/Products/Debug-iphonesimulator/SwarmGate.app/Info.plist"
+          [[ -f "$info" ]] || { echo 'Built app Info.plist missing'; exit 1; }
+          python3 - "$info" <<'PY'
+          import plistlib
+          import sys
+          with open(sys.argv[1], 'rb') as f:
+              info = plistlib.load(f)
+          assert info.get('UIDeviceFamily') == [1], info.get('UIDeviceFamily')
+          assert info.get('CFBundleIdentifier') == 'com.infinityball.swarmgate', info.get('CFBundleIdentifier')
+          print('Built app UIDeviceFamily=[1], CFBundleIdentifier=com.infinityball.swarmgate')
+          PY
