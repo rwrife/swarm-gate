@@ -71,7 +71,7 @@ The thought that seeded this game was captured for the iPhone Duo dual-screen co
 
 ## Current status
 
-Documentation and backlog scaffold only. There is no Swift/Xcode project, no build, no icon, no TestFlight build yet.
+Native SwiftUI iPhone app scaffold and two Swift packages are checked in. The app currently displays an under-construction screen; wave simulation, pickup economy, persistence migrations, and playable battlefield are **not implemented**. No icon or TestFlight build exists yet. CI builds the app and tests the package scaffolds; its results are not gameplay validation.
 
 Milestones:
 1. **M1 — Skeleton & CI:** Xcode app + Swift package layout, Linux package-test lane, macOS build lane, toolchain/zero-network contract gates.
@@ -80,12 +80,14 @@ Milestones:
 4. **M4 — Playable UI:** SwiftUI shell + SpriteKit battlefield, HUD, portrait controls, accessibility.
 5. **M5 — Release:** icon + listing copy review, `.github/workflows/release.yml`, TestFlight with real evidence.
 
-## Development quickstart (future state)
+## Development quickstart
 
 - macOS with the pinned Xcode 26.0.1 (17A400) for the app target; any Swift 6 toolchain for the pure-Swift package.
 - `Packages/SwarmGateKit` holds the deterministic engine and runs `swift test` on Linux CI.
 - The app target builds with `xcodebuild` on the macOS lane; CI asserts TARGETED_DEVICE_FAMILY = 1 and the exact bundle identifier.
-- Until M1 lands, this repository contains only planning documentation.
+- `swift test --package-path Packages/SwarmGateKit` and `swift test --package-path Packages/SwarmGateStore` run the two independent package test targets. The store package resolves GRDB and needs SQLite development headers on Linux.
+- `python3 scripts/check_contract.py` checks the committed project and toolchain identity; `python3 -m unittest discover -s scripts -p 'test_*.py'` tests its negative paths.
+- No asset-catalog icon has been generated yet. M5 owns the real generated artwork and its wiring.
 
 ## License
 
