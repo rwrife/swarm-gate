@@ -1,5 +1,4 @@
-/// A stable seed value for a future fixed-tick simulation.
-/// Gameplay and pickup decisions are not implemented in this scaffold.
+/// A stable seed value for the fixed-tick simulation.
 public struct RunSeed: Equatable, Sendable {
     public let value: UInt64
 
