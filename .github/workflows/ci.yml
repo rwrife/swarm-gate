@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install SQLite headers
-        run: apt-get update && apt-get install -y --no-install-recommends libsqlite3-dev
+        run: apt-get update && apt-get install -y --no-install-recommends libsqlite3-dev python3
       - name: Enforce project contract and mutation tests
         run: |
           python3 scripts/check_contract.py
@@ -49,6 +49,16 @@ jobs:
           xcodebuild -version
           sdk=$(xcrun --sdk iphoneos --show-sdk-version)
           [[ "$sdk" == 26.0 ]] || { echo "Expected iPhoneOS SDK 26.0; got $sdk"; exit 1; }
+          # Hosted images may include the pinned Xcode but omit its matching
+          # platform download. Do not silently switch to a newer Xcode.
+          if ! xcodebuild -project SwarmGate.xcodeproj -scheme SwarmGate \
+            -showdestinations 2>&1 | tee "$RUNNER_TEMP/destinations.txt"; then
+            echo 'Could not inspect build destinations'; exit 1
+          fi
+          if ! grep -Fq 'Any iOS Simulator Device' "$RUNNER_TEMP/destinations.txt"; then
+            echo 'Pinned iOS 26 platform unavailable; downloading for exact Xcode'
+            xcodebuild -downloadPlatform iOS -architectureVariant universal
+          fi
           xcodebuild build -project SwarmGate.xcodeproj -scheme SwarmGate \
             -configuration Debug -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath "$RUNNER_TEMP/SwarmGateDerivedData" CODE_SIGNING_ALLOWED=NO
