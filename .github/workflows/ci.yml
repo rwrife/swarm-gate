@@ -11,7 +11,7 @@ jobs:
     container:
       image: swift:6.2-noble
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: Install SQLite headers
         run: apt-get update && apt-get install -y --no-install-recommends libsqlite3-dev python3
       - name: Enforce project contract and mutation tests
@@ -26,7 +26,7 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 35
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: Enforce project contract and mutation tests
         run: |
           python3 scripts/check_contract.py
