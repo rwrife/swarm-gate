@@ -32,6 +32,19 @@ public struct RuleTable: Equatable, Sendable {
     public var initialSpeed: Int = 1
     public var maximumSpeed: Int = 4
     public var bossEveryWaves: Int = 5
+    /// 0 disables pickups entirely, byte-preserving pre-M2b replays. Otherwise
+    /// one pickup is placed on every `pickupEveryWaves`-th wave.
+    public var pickupEveryWaves: Int = 0
+    /// Ticks a pickup stays decidable once it reaches the gate zone.
+    public var pickupZoneTicks: Int = 3
+    public var maximumFirepower: Int = 4
+    public var maximumWeaponAmmo: Int = 12
+    public var weaponGrantAmmo: Int = 6
+    public var maximumBombs: Int = 3
+    /// Zombies at or inside this distance are inside the lane segment a bomb clears.
+    public var bombReach: Int = 45
+    /// Buffs are temporary: firepower drops one step on this cadence, floor 1.
+    public var firepowerDecayTicks: Int = 45
 
     public init(version: Int = 1, laneCount: Int = 5, spawnDistance: Int = 120,
                 convergenceRadius: Int = 24, playerHealth: Int = 100,
@@ -59,6 +72,19 @@ public struct RuleTable: Equatable, Sendable {
     }
 
     public static let v1 = RuleTable()
+    public static let v2: RuleTable = {
+        var rules = RuleTable(version: 2)
+        rules.pickupEveryWaves = 1
+        return rules
+    }()
+
+    fileprivate func validateEconomy() {
+        precondition(pickupEveryWaves >= 0 && pickupZoneTicks > 0)
+        precondition(shotDamage <= Int.max / 2)
+        precondition(maximumFirepower >= 1 && maximumFirepower <= Int.max / (shotDamage * 2))
+        precondition(maximumWeaponAmmo > 0 && weaponGrantAmmo > 0 && maximumBombs > 0)
+        precondition(bombReach >= 0 && firepowerDecayTicks > 0)
+    }
 
     fileprivate func validate() {
         precondition(version > 0 && laneCount > 0 && spawnDistance > 0)
@@ -69,12 +95,16 @@ public struct RuleTable: Equatable, Sendable {
         precondition(initialDepth > 0 && maximumDepth >= initialDepth)
         precondition(initialSpeed > 0 && maximumSpeed >= initialSpeed)
         precondition(spawnDistance <= Int.max - maximumDepth)
+        validateEconomy()
     }
 }
 
 public enum InputAction: Equatable, Sendable {
     case move(lane: Int)
     case fire
+    case acceptPickup(id: Int)
+    case ignorePickup(id: Int)
+    case bomb
 }
 
 public struct TickInput: Equatable, Sendable {
@@ -109,6 +139,8 @@ public struct Zombie: Equatable, Sendable {
 public struct LedgerEvent: Equatable, Sendable {
     public enum Kind: String, Sendable {
         case input, spawn, bossSpawn, hit, kill, bite, end
+        case pickupSpawn, pickupReady, pickupAccept, pickupIgnore, pickupExpire
+        case buffDecay, bomb, bombKill
     }
     public let tick: Int
     public let kind: Kind
@@ -135,8 +167,13 @@ public struct EventLedger: Equatable, Sendable {
 }
 
 /// Call step once per fixed tick. Rendering and elapsed time never enter the engine.
-/// Tick order: inputs, wave spawn, steering (using pre-move distance), advance,
-/// bites. A zombie bites once on arrival, regardless of lane, then is removed.
+/// Tick order: inputs, wave spawn (plus seeded pickup drop), steering (using
+/// pre-move distance), advance, bites, pickup descent/decay. A zombie bites once
+/// on arrival, regardless of lane, then is removed.
+///
+/// Fairness invariant: only explicit accept grants a pickup effect. Spawn,
+/// descent, expiry, and ignore cannot grant buffs, weapons, bombs or penalties.
+/// Buffs decay to base 1; firing spends ammo and a bomb action spends inventory.
 public struct Simulation: Sendable {
     public let rules: RuleTable
     public let inputs: InputScript
@@ -144,10 +181,15 @@ public struct Simulation: Sendable {
     public private(set) var playerLane: Int
     public private(set) var health: Int
     public private(set) var zombies: [Zombie] = []
+    public private(set) var pickups: [Pickup] = []
+    public private(set) var firepower = 1
+    public private(set) var weaponAmmo = 0
+    public private(set) var bombs = 0
     public private(set) var ledger: EventLedger
     public var isEnded: Bool { health == 0 }
     private var random: SplitMix64
     private var nextID = 0
+    private var nextPickupID = 0
 
     public init(seed: RunSeed, rules: RuleTable = .v1, inputs: InputScript = InputScript()) {
         rules.validate()
@@ -177,6 +219,15 @@ public struct Simulation: Sendable {
             case .fire:
                 record(.input)
                 fire()
+            case .acceptPickup(let id):
+                record(.input, value: id)
+                acceptPickup(id: id)
+            case .ignorePickup(let id):
+                record(.input, value: id)
+                ignorePickup(id: id)
+            case .bomb:
+                record(.input)
+                triggerBomb()
             }
         }
         if tick % rules.waveInterval == 0 { spawnWave() }
@@ -199,6 +250,10 @@ public struct Simulation: Sendable {
             }
         }
         zombies = survivors
+        if !isEnded {
+            advancePickups()
+            decayBuffsIfNeeded()
+        }
         tick += 1
     }
 
@@ -220,6 +275,7 @@ public struct Simulation: Sendable {
             let lane = Int(random.next() % UInt64(rules.laneCount))
             spawn(lane: lane, distance: rules.spawnDistance, speed: speed, boss: true)
         }
+        spawnPickupIfNeeded(waveIndex: index, speed: speed, clusterLane: startLane)
     }
 
     private mutating func spawn(lane: Int, distance: Int, speed: Int, boss: Bool) {
@@ -231,12 +287,112 @@ public struct Simulation: Sendable {
         record(boss ? .bossSpawn : .spawn, zombie: zombie, value: zombie.health)
     }
 
+    /// Seeded drop drawn after the wave's zombie lanes so existing v1 replays
+    /// (pickupEveryWaves == 0) consume zero extra randomness and stay byte-stable.
+    /// Power-downs are deliberately placed at the front of the densest fresh
+    /// column so the bait is tempting; the fairness guarantee is that nothing
+    /// applies until an explicit accept.
+    private mutating func spawnPickupIfNeeded(waveIndex: Int, speed: Int, clusterLane: Int) {
+        guard rules.pickupEveryWaves > 0, waveIndex % rules.pickupEveryWaves == 0 else { return }
+        let kind = PickupKind(roll: Int(random.next() % 100))
+        let lane: Int
+        if kind == .powerDown {
+            lane = clusterLane
+        } else {
+            lane = Int(random.next() % UInt64(rules.laneCount))
+        }
+        let pickup = Pickup(id: nextPickupID, kind: kind, lane: lane,
+                            distance: rules.spawnDistance, speed: speed)
+        nextPickupID += 1
+        pickups.append(pickup)
+        recordPickup(.pickupSpawn, pickup: pickup, value: kind.rawValue)
+    }
+
+    private mutating func advancePickups() {
+        var survivors: [Pickup] = []
+        for var pickup in pickups {
+            if pickup.distance == 0 {
+                // Already in zone: count down.
+                pickup.zoneTicksLeft -= 1
+                if pickup.zoneTicksLeft <= 0 {
+                    recordPickup(.pickupExpire, pickup: pickup, value: pickup.kind.rawValue)
+                    continue
+                }
+                survivors.append(pickup)
+            } else {
+                pickup.distance = max(0, pickup.distance - pickup.speed)
+                if pickup.distance == 0 {
+                    pickup.zoneTicksLeft = rules.pickupZoneTicks
+                    recordPickup(.pickupReady, pickup: pickup, value: pickup.kind.rawValue)
+                }
+                survivors.append(pickup)
+            }
+        }
+        pickups = survivors
+    }
+
+    private mutating func decayBuffsIfNeeded() {
+        guard rules.firepowerDecayTicks > 0 else { return }
+        if tick > 0 && tick % rules.firepowerDecayTicks == 0 {
+            if firepower > 1 {
+                firepower -= 1
+                record(.buffDecay, value: firepower)
+            }
+        }
+    }
+
+    private mutating func acceptPickup(id: Int) {
+        guard let index = pickups.firstIndex(where: { $0.id == id && $0.inZone }) else { return }
+        let pickup = pickups.remove(at: index)
+        switch pickup.kind {
+        case .buff:
+            firepower = min(rules.maximumFirepower, firepower + 1)
+        case .weapon:
+            weaponAmmo += min(rules.weaponGrantAmmo, rules.maximumWeaponAmmo - weaponAmmo)
+        case .bomb:
+            bombs = min(rules.maximumBombs, bombs + 1)
+        case .powerDown:
+            // Explicit opt-in penalty: reset stacked buffs and drain ammo.
+            firepower = 1
+            weaponAmmo = 0
+        }
+        recordPickup(.pickupAccept, pickup: pickup, value: pickup.kind.rawValue)
+    }
+
+    private mutating func ignorePickup(id: Int) {
+        guard let index = pickups.firstIndex(where: { $0.id == id && $0.inZone }) else { return }
+        let pickup = pickups.remove(at: index)
+        recordPickup(.pickupIgnore, pickup: pickup, value: pickup.kind.rawValue)
+    }
+
+    private mutating func triggerBomb() {
+        guard bombs > 0 else { return }
+        bombs -= 1
+        record(.bomb, value: bombs)
+        var survivors: [Zombie] = []
+        for zombie in zombies {
+            if zombie.lane == playerLane && zombie.distance <= rules.bombReach {
+                record(.bombKill, zombie: zombie)
+            } else {
+                survivors.append(zombie)
+            }
+        }
+        zombies = survivors
+    }
+
     private mutating func fire() {
         // Nearest in the player lane; stable spawn order breaks distance ties.
         guard let index = zombies.indices.filter({ zombies[$0].lane == playerLane }).min(by: {
             zombies[$0].distance < zombies[$1].distance
         }) else { return }
-        zombies[index].health = max(0, zombies[index].health - rules.shotDamage)
+        let damage: Int
+        if weaponAmmo > 0 {
+            weaponAmmo -= 1
+            damage = rules.shotDamage * 2 * firepower
+        } else {
+            damage = rules.shotDamage * firepower
+        }
+        zombies[index].health = max(0, zombies[index].health - damage)
         let zombie = zombies[index]
         record(.hit, zombie: zombie, value: zombie.health)
         if zombie.health == 0 {
@@ -249,5 +405,11 @@ public struct Simulation: Sendable {
         ledger.events.append(LedgerEvent(tick: tick, kind: kind, id: zombie?.id ?? -1,
                                         lane: zombie?.lane ?? playerLane,
                                         distance: zombie?.distance ?? 0, value: value))
+    }
+
+    private mutating func recordPickup(_ kind: LedgerEvent.Kind, pickup: Pickup, value: Int) {
+        ledger.events.append(LedgerEvent(tick: tick, kind: kind, id: pickup.id,
+                                        lane: pickup.lane, distance: pickup.distance,
+                                        value: value))
     }
 }
