@@ -49,17 +49,21 @@ private func smallRules() -> RuleTable {
     rules.initialSpeed = 2
     rules.maximumSpeed = 2
     rules.firepowerDecayTicks = 100
-    var sim = Simulation(seed: RunSeed(42), rules: rules)
+    rules.playerHealth = 10000
+    var script = InputScript()
+    for id in 0..<5 { script.capture(tick: id * 2 + 1, action: .ignorePickup(id: id)) }
+    var sim = Simulation(seed: RunSeed(42), rules: rules, inputs: script)
     #expect(sim.firepower == 1)
     #expect(sim.weaponAmmo == 0)
     #expect(sim.bombs == 0)
-    // Run for several waves without accept; the unresolved pickups expire.
+    // Explicitly ignore every pickup after arrival; no inventory changes.
     sim.advance(ticks: 10)
     #expect(sim.firepower == 1)
     #expect(sim.weaponAmmo == 0)
     #expect(sim.bombs == 0)
     #expect(sim.ledger.events.contains { $0.kind == .pickupSpawn })
-    #expect(sim.ledger.events.contains { $0.kind == .pickupReady || $0.kind == .pickupExpire })
+    #expect(sim.ledger.events.filter { $0.kind == .pickupReady }.count == 5)
+    #expect(sim.ledger.events.filter { $0.kind == .pickupIgnore }.count == 5)
     #expect(!sim.ledger.events.contains { $0.kind == .pickupAccept })
 }
 
