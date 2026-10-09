@@ -19,12 +19,20 @@ private func sampleRun(id: String = "complete", mode: RunMode = .endless) -> Run
     let known = try store.personalBests()
     #expect(known.bestWave != nil)
     #expect(known.longestEndlessTicks == run.summary?.ticks)
+    // Truncated run: first event missing breaks sequence and hash.
     var truncated = run
     truncated.id = "truncated"
     truncated.events.removeFirst()
     try store.append(truncated)
     #expect(truncated.summary == nil)
     #expect(try store.personalBests() == known)
+
+    // Parallel ledger with identical complete runs, omitting the truncated run.
+    let parallel = try RunStore(path: ":memory:")
+    try parallel.append(run)
+    let parallelBests = try parallel.personalBests()
+    let actualBests = try store.personalBests()
+    #expect(parallelBests == actualBests)
     #expect(throws: (any Error).self) { try store.append(run) }
     #expect(try store.runs().count == 2)
     let csv = try store.csv()
@@ -50,10 +58,56 @@ private func sampleRun(id: String = "complete", mode: RunMode = .endless) -> Run
     #expect(try target.runs() == [first])
     #expect(throws: (any Error).self) { try target.restoreReplacingAll(Data(#"{"version":1,"runs":[{},{}]}"#.utf8)) }
     #expect(try target.runs() == [first])
-    // DB trigger guards survive the replace transaction.
+    let empty = Data(#"{"runs":[],"version":1}"#.utf8)
+    #expect(try target.previewRestore(empty) == BackupPreview(existing: 1, incoming: 0, added: 0, removed: 1, changed: 0))
+    try target.restoreReplacingAll(empty)
+    #expect(try target.runs().isEmpty)
+    try target.restoreReplacingAll(encoded)
+    #expect(try target.runs() == [first])
+    // Force a real insertion failure AFTER deletion to prove atomic rollback.
+    try target.debugWrite { db in
+        try db.execute(sql: "CREATE TRIGGER fail_restore BEFORE INSERT ON event BEGIN SELECT RAISE(ABORT, 'test insertion failure'); END")
+    }
+    #expect(throws: (any Error).self) { try target.restoreReplacingAll(encoded) }
+    #expect(try target.runs() == [first])
+    try target.debugWrite { db in try db.execute(sql: "DROP TRIGGER fail_restore") }
+    // DB trigger guards survive successful replacement AND rolled-back replacement.
     #expect(throws: (any Error).self) {
         try target.debugWrite { db in try db.execute(sql: "DELETE FROM run") }
     }
+}
+
+@Test func backupRoundTripPropertyAcrossSeedsAndModes() throws {
+    for seed in [UInt64(0), 1, 42, UInt64.max] {
+        for mode in [RunMode.career, .endless] {
+            var sim = Simulation(seed: RunSeed(seed))
+            sim.advance(ticks: 1_000)
+            let source = try RunStore(path: ":memory:")
+            let run = RunRecord(id: "seed-\(seed)", mode: mode, ledger: sim.ledger, waveInterval: sim.rules.waveInterval)
+            try source.append(run)
+            let backup = try source.backup()
+            let destination = try RunStore(path: ":memory:")
+            try destination.restoreReplacingAll(backup)
+            #expect(try destination.runs() == [run])
+            #expect(try destination.backup() == backup)
+        }
+    }
+}
+
+@Test func csvGoldenForCompleteAndPartialRuns() throws {
+    var rules = RuleTable()
+    rules.playerHealth = 10
+    rules.spawnDistance = 1
+    rules.waveInterval = 1
+    var sim = Simulation(seed: RunSeed(0), rules: rules)
+    let store = try RunStore(path: ":memory:")
+    try store.append(RunRecord(id: "partial", mode: .endless, ledger: sim.ledger, waveInterval: 1))
+    sim.step()
+    try store.append(RunRecord(id: "done", mode: .career, ledger: sim.ledger, waveInterval: 1))
+    let golden = "id,mode,rule_version,seed,status,wave,score,ticks,bosses_slain\n"
+        + "\"done\",\"career\",\"1\",\"0\",\"complete\",\"1\",\"0\",\"1\",\"0\"\n"
+        + "\"partial\",\"endless\",\"1\",\"0\",\"unknown\",\"\",\"\",\"\",\"\"\n"
+    #expect(try store.csv() == golden)
 }
 
 @Test func committedV1FixtureMigratesAndSurvivesReopen() throws {
