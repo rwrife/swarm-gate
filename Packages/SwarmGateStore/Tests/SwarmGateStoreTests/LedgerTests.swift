@@ -19,12 +19,20 @@ private func sampleRun(id: String = "complete", mode: RunMode = .endless) -> Run
     let known = try store.personalBests()
     #expect(known.bestWave != nil)
     #expect(known.longestEndlessTicks == run.summary?.ticks)
+    // Truncated run: first event missing breaks sequence and hash.
     var truncated = run
     truncated.id = "truncated"
     truncated.events.removeFirst()
     try store.append(truncated)
     #expect(truncated.summary == nil)
     #expect(try store.personalBests() == known)
+
+    // Parallel ledger with identical complete runs, omitting the truncated run.
+    let parallel = try RunStore(path: ":memory:")
+    try parallel.append(run)
+    let parallelBests = try parallel.personalBests()
+    let actualBests = try store.personalBests()
+    #expect(parallelBests == actualBests)
     #expect(throws: (any Error).self) { try store.append(run) }
     #expect(try store.runs().count == 2)
     let csv = try store.csv()
@@ -49,6 +57,12 @@ private func sampleRun(id: String = "complete", mode: RunMode = .endless) -> Run
     #expect(throws: (any Error).self) { try target.restoreReplacingAll(Data(#"{"version":2,"runs":[]}"#.utf8)) }
     #expect(try target.runs() == [first])
     #expect(throws: (any Error).self) { try target.restoreReplacingAll(Data(#"{"version":1,"runs":[{},{}]}"#.utf8)) }
+    #expect(try target.runs() == [first])
+    let empty = Data(#"{"runs":[],"version":1}"#.utf8)
+    #expect(try target.previewRestore(empty) == BackupPreview(existing: 1, incoming: 0, added: 0, removed: 1, changed: 0))
+    try target.restoreReplacingAll(empty)
+    #expect(try target.runs().isEmpty)
+    try target.restoreReplacingAll(encoded)
     #expect(try target.runs() == [first])
     // DB trigger guards survive the replace transaction.
     #expect(throws: (any Error).self) {
