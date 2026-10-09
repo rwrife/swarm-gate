@@ -64,7 +64,14 @@ private func sampleRun(id: String = "complete", mode: RunMode = .endless) -> Run
     #expect(try target.runs().isEmpty)
     try target.restoreReplacingAll(encoded)
     #expect(try target.runs() == [first])
-    // DB trigger guards survive the replace transaction.
+    // Force a real insertion failure AFTER deletion to prove atomic rollback.
+    try target.debugWrite { db in
+        try db.execute(sql: "CREATE TRIGGER fail_restore BEFORE INSERT ON event BEGIN SELECT RAISE(ABORT, 'test insertion failure'); END")
+    }
+    #expect(throws: (any Error).self) { try target.restoreReplacingAll(encoded) }
+    #expect(try target.runs() == [first])
+    try target.debugWrite { db in try db.execute(sql: "DROP TRIGGER fail_restore") }
+    // DB trigger guards survive successful replacement AND rolled-back replacement.
     #expect(throws: (any Error).self) {
         try target.debugWrite { db in try db.execute(sql: "DELETE FROM run") }
     }
