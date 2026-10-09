@@ -70,6 +70,39 @@ private func sampleRun(id: String = "complete", mode: RunMode = .endless) -> Run
     }
 }
 
+@Test func backupRoundTripPropertyAcrossSeedsAndModes() throws {
+    for seed in [UInt64(0), 1, 42, UInt64.max] {
+        for mode in [RunMode.career, .endless] {
+            var sim = Simulation(seed: RunSeed(seed))
+            sim.advance(ticks: 1_000)
+            let source = try RunStore(path: ":memory:")
+            let run = RunRecord(id: "seed-\(seed)", mode: mode, ledger: sim.ledger, waveInterval: sim.rules.waveInterval)
+            try source.append(run)
+            let backup = try source.backup()
+            let destination = try RunStore(path: ":memory:")
+            try destination.restoreReplacingAll(backup)
+            #expect(try destination.runs() == [run])
+            #expect(try destination.backup() == backup)
+        }
+    }
+}
+
+@Test func csvGoldenForCompleteAndPartialRuns() throws {
+    var rules = RuleTable()
+    rules.playerHealth = 10
+    rules.spawnDistance = 1
+    rules.waveInterval = 1
+    var sim = Simulation(seed: RunSeed(0), rules: rules)
+    let store = try RunStore(path: ":memory:")
+    try store.append(RunRecord(id: "partial", mode: .endless, ledger: sim.ledger, waveInterval: 1))
+    sim.step()
+    try store.append(RunRecord(id: "done", mode: .career, ledger: sim.ledger, waveInterval: 1))
+    let golden = "id,mode,rule_version,seed,status,wave,score,ticks,bosses_slain\n"
+        + "\"done\",\"career\",\"1\",\"0\",\"complete\",\"1\",\"0\",\"1\",\"0\"\n"
+        + "\"partial\",\"endless\",\"1\",\"0\",\"unknown\",\"\",\"\",\"\",\"\"\n"
+    #expect(try store.csv() == golden)
+}
+
 @Test func committedV1FixtureMigratesAndSurvivesReopen() throws {
     let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
         .appendingPathComponent("Fixtures/v1.sqlite")
