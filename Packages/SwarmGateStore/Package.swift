@@ -11,6 +11,7 @@ let package = Package(
     ],
     targets: [
         .target(name: "SwarmGateStore", dependencies: ["SwarmGateKit", .product(name: "GRDB", package: "GRDB.swift")]),
-        .testTarget(name: "SwarmGateStoreTests", dependencies: ["SwarmGateStore", .product(name: "GRDB", package: "GRDB.swift")]),
+        .testTarget(name: "SwarmGateStoreTests", dependencies: ["SwarmGateStore", .product(name: "GRDB", package: "GRDB.swift")],
+                    exclude: ["Fixtures"]),
     ]
 )

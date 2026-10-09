@@ -136,8 +136,8 @@ public struct Zombie: Equatable, Sendable {
     public let isBoss: Bool
 }
 
-public struct LedgerEvent: Equatable, Sendable {
-    public enum Kind: String, Sendable {
+public struct LedgerEvent: Codable, Equatable, Sendable {
+    public enum Kind: String, Codable, Sendable {
         case input, spawn, bossSpawn, hit, kill, bite, end
         case pickupSpawn, pickupReady, pickupAccept, pickupIgnore, pickupExpire
         case buffDecay, bomb, bombKill
