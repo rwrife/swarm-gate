@@ -14,7 +14,9 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: Install SQLite headers
         run: apt-get update && apt-get install -y --no-install-recommends libsqlite3-dev python3
-      - name: Enforce project contract and mutation tests
+      - name: Parse app sources syntax on Linux
+        run: sh scripts/parse_sources.sh
+      - name: Enforce project contract intent and mutation tests
         run: |
           python3 scripts/check_contract.py
           python3 -m unittest discover -s scripts -p 'test_*.py' -v
@@ -73,3 +75,28 @@ jobs:
           assert info.get('CFBundleIdentifier') == 'com.infinityball.swarmgate', info.get('CFBundleIdentifier')
           print('Built app UIDeviceFamily=[1], CFBundleIdentifier=com.infinityball.swarmgate')
           PY
+      - name: Simulator menu to run to summary journey
+        timeout-minutes: 30
+        shell: bash
+        run: |
+          set -euo pipefail
+          pick=''
+          for candidate in /Applications/Xcode*.app/Contents/Developer; do
+            [[ -d "$candidate" ]] || continue
+            version=$(DEVELOPER_DIR="$candidate" xcodebuild -version)
+            if [[ "$version" == $'Xcode 26.0.1\nBuild version 17A400' ]]; then
+              pick="$candidate"
+              break
+            fi
+          done
+          [[ -n "$pick" ]] || { echo 'Exact Xcode 26.0.1 (17A400) unavailable'; exit 1; }
+          export DEVELOPER_DIR="$pick"
+          python3 scripts/run_simulator.py
+      - name: Preserve simulator result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: swarm-gate-simulator-result
+          path: ${{ runner.temp }}/SwarmGateUI.xcresult
+          if-no-files-found: ignore
+          retention-days: 7

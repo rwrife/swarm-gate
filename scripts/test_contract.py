@@ -68,6 +68,15 @@ class ContractTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     verify(path)
 
+    def test_defense_workspace_layout_seam_exists(self):
+        workspace = ROOT / "SwarmGate/App/DefenseWorkspaceLayout.swift"
+        self.assertTrue(workspace.exists(), "DefenseWorkspaceLayout seam file must exist")
+        text = workspace.read_text()
+        self.assertIn("enum DefenseWorkspaceLayout", text)
+        self.assertIn("struct DefenseWorkspaceView", text)
+        self.assertIn("portraitCompact", text)
+        self.assertIn("dualSurface", text)
+
     @staticmethod
     def copy_minimal_tree(path):
         shutil.copy(ROOT / "toolchain.json", path / "toolchain.json")
