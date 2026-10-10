@@ -78,6 +78,17 @@ public struct RuleTable: Equatable, Sendable {
         return rules
     }()
 
+    /// Playable 10 Hz cadence. Freeze with the input script for exact replay.
+    public static let v3: RuleTable = {
+        var rules = RuleTable.v2
+        rules.version = 3
+        rules.waveInterval = 60
+        rules.spawnDistance = 180
+        rules.pickupZoneTicks = 30
+        rules.firepowerDecayTicks = 150
+        return rules
+    }()
+
     fileprivate func validateEconomy() {
         precondition(pickupEveryWaves >= 0 && pickupZoneTicks > 0)
         precondition(shotDamage <= Int.max / 2)
@@ -176,7 +187,10 @@ public struct EventLedger: Equatable, Sendable {
 /// Buffs decay to base 1; firing spends ammo and a bomb action spends inventory.
 public struct Simulation: Sendable {
     public let rules: RuleTable
-    public let inputs: InputScript
+    /// Inputs captured at init plus everything queued live. Appending only ever
+    /// adds rows at the current or a later tick, so a replay of the same seed,
+    /// rules and captured script reproduces the ledger byte for byte.
+    public private(set) var inputs: InputScript
     public private(set) var tick = 0
     public private(set) var playerLane: Int
     public private(set) var health: Int
@@ -199,6 +213,12 @@ public struct Simulation: Sendable {
         health = rules.playerHealth
         ledger = EventLedger(ruleVersion: rules.version, seed: seed.value)
         random = SplitMix64(seed: seed.value)
+    }
+
+    /// Capture intent, never mutate game state between ticks. Terminal input is ignored.
+    public mutating func queue(_ action: InputAction) {
+        guard !isEnded else { return }
+        inputs.capture(tick: tick, action: action)
     }
 
     public mutating func advance(ticks: Int) {
