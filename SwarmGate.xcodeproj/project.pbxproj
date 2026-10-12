@@ -14,6 +14,7 @@
 		A10000000000000000000106 /* GameSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000206 /* GameSession.swift */; };
 		A10000000000000000000107 /* PlayableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000207 /* PlayableView.swift */; };
 		A10000000000000000000108 /* DefenseWorkspaceLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000208 /* DefenseWorkspaceLayout.swift */; };
+		A10000000000000000000109 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000209 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -33,6 +34,7 @@
 		A10000000000000000000206 /* GameSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameSession.swift; sourceTree = "<group>"; };
 		A10000000000000000000207 /* PlayableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayableView.swift; sourceTree = "<group>"; };
 		A10000000000000000000208 /* DefenseWorkspaceLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DefenseWorkspaceLayout.swift; sourceTree = "<group>"; };
+		A10000000000000000000209 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A10000000000000000000204 /* SwarmGate.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SwarmGate.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000205 /* SwarmGateUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SwarmGateUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -70,6 +72,7 @@
 				A10000000000000000000206 /* GameSession.swift */,
 				A10000000000000000000207 /* PlayableView.swift */,
 				A10000000000000000000208 /* DefenseWorkspaceLayout.swift */,
+				A10000000000000000000209 /* Assets.xcassets */,
 			);
 			path = SwarmGate/App;
 			sourceTree = "<group>";
@@ -157,7 +160,7 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		A10000000000000000000703 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0;};
+		A10000000000000000000703 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000109 /* Assets.xcassets in Resources */,); runOnlyForDeploymentPostprocessing = 0;};
 		A10000000000000000000704 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0;};
 /* End PBXResourcesBuildPhase section */
 
@@ -195,6 +198,7 @@
 				CODE_SIGNING_ALLOWED = NO;
 				CODE_SIGNING_REQUIRED = NO;
 				CURRENT_PROJECT_VERSION = 1;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "SwarmGate";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -215,6 +219,7 @@
 				CODE_SIGNING_ALLOWED = NO;
 				CODE_SIGNING_REQUIRED = NO;
 				CURRENT_PROJECT_VERSION = 1;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "SwarmGate";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

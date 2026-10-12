@@ -52,6 +52,7 @@ def verify(root: Path) -> None:
             "IPHONEOS_DEPLOYMENT_TARGET": "26.0",
             "SWIFT_VERSION": "6.0",
             "SUPPORTED_PLATFORMS": '"iphoneos iphonesimulator"',
+            "ASSETCATALOG_COMPILER_APPICON_NAME": "AppIcon",
         }
         for key, value in expected.items():
             if settings.get(key) != value:
@@ -64,7 +65,12 @@ def verify(root: Path) -> None:
     for source in (root / "Packages/SwarmGateKit/Sources").rglob("*.swift"):
         if re.search(r'^\s*import\s+(?:SwiftUI|UIKit|SpriteKit|GRDB)\b', source.read_text(), re.M):
             raise ValueError(f"engine must remain pure Swift: {source.relative_to(root)}")
-    print("Contract PASS: iPhone-only app Debug/Release, exact bundle, iOS 26, pure engine, offline")
+    # Generated App Store artwork must be real bytes wired into the app target.
+    import check_icon
+    check_icon.verify(root / "AppStore/icon.png")
+    if (root / "SwarmGate/App/Assets.xcassets/AppIcon.appiconset/icon.png").read_bytes() != (root / "AppStore/icon.png").read_bytes():
+        raise ValueError("asset catalog AppIcon must be the same bytes as AppStore/icon.png")
+    print("Contract PASS: iPhone-only app Debug/Release, exact bundle, iOS 26, pure engine, offline, generated AppIcon wired")
 
 
 if __name__ == "__main__":
