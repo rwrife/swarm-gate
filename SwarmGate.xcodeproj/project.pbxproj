@@ -11,6 +11,9 @@
 		A10000000000000000000103 /* SwarmGateLaunchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000203 /* SwarmGateLaunchTests.swift */; };
 		A10000000000000000000104 /* SwarmGateKit in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000801 /* SwarmGateKit */; };
 		A10000000000000000000105 /* SwarmGateStore in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000803 /* SwarmGateStore */; };
+		A10000000000000000000106 /* GameSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000206 /* GameSession.swift */; };
+		A10000000000000000000107 /* PlayableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000207 /* PlayableView.swift */; };
+		A10000000000000000000108 /* DefenseWorkspaceLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000208 /* DefenseWorkspaceLayout.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -27,6 +30,9 @@
 		A10000000000000000000201 /* SwarmGateApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwarmGateApp.swift; sourceTree = "<group>"; };
 		A10000000000000000000202 /* DefenseHomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DefenseHomeView.swift; sourceTree = "<group>"; };
 		A10000000000000000000203 /* SwarmGateLaunchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwarmGateLaunchTests.swift; sourceTree = "<group>"; };
+		A10000000000000000000206 /* GameSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameSession.swift; sourceTree = "<group>"; };
+		A10000000000000000000207 /* PlayableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayableView.swift; sourceTree = "<group>"; };
+		A10000000000000000000208 /* DefenseWorkspaceLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DefenseWorkspaceLayout.swift; sourceTree = "<group>"; };
 		A10000000000000000000204 /* SwarmGate.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SwarmGate.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000205 /* SwarmGateUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SwarmGateUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -61,6 +67,9 @@
 			children = (
 				A10000000000000000000201 /* SwarmGateApp.swift */,
 				A10000000000000000000202 /* DefenseHomeView.swift */,
+				A10000000000000000000206 /* GameSession.swift */,
+				A10000000000000000000207 /* PlayableView.swift */,
+				A10000000000000000000208 /* DefenseWorkspaceLayout.swift */,
 			);
 			path = SwarmGate/App;
 			sourceTree = "<group>";
@@ -159,6 +168,9 @@
 			files = (
 				A10000000000000000000101 /* SwarmGateApp.swift in Sources */,
 				A10000000000000000000102 /* DefenseHomeView.swift in Sources */,
+				A10000000000000000000106 /* GameSession.swift in Sources */,
+				A10000000000000000000107 /* PlayableView.swift in Sources */,
+				A10000000000000000000108 /* DefenseWorkspaceLayout.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
