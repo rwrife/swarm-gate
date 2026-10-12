@@ -13,6 +13,29 @@ def run(*args, timeout=120, capture=False):
                           stdout=subprocess.PIPE if capture else None).stdout
 
 
+def ensure_booted(run, udid, already_booted):
+    """Boot `udid` and wait for bootstatus, each wait bounded.
+
+    First boot of a runtime fetched via `xcodebuild -downloadPlatform`
+    installs its device image lazily and can exceed one 180s bootstatus
+    window (macos-26 run 38068161640 attempts 2 and 3 timed out at exactly
+    this phase on two different devices). Allow one bounded shutdown and
+    reboot without hiding a second timeout.
+    """
+    for attempt in (1, 2):
+        try:
+            if not already_booted or attempt == 2:
+                run("xcrun", "simctl", "boot", udid, timeout=120)
+            run("xcrun", "simctl", "bootstatus", udid, "-b", timeout=180)
+            return
+        except subprocess.TimeoutExpired:
+            print(f"simctl bootstatus timed out (attempt {attempt})",
+                  file=sys.stderr, flush=True)
+            if attempt == 2:
+                raise
+            run("xcrun", "simctl", "shutdown", udid, timeout=60, capture=True)
+
+
 def main():
     sdk = run("xcrun", "--sdk", "iphonesimulator", "--show-sdk-version", capture=True).strip()
     runtime = "com.apple.CoreSimulator.SimRuntime.iOS-" + sdk.replace(".", "-")
@@ -29,9 +52,7 @@ def main():
         raise RuntimeError(f"ENVIRONMENT BLOCKER: no available iPhone for {runtime}; {devices}")
     chosen = sorted(candidates, key=lambda d: d["name"])[0]
     udid = chosen["udid"]
-    if chosen["state"] != "Booted":
-        run("xcrun", "simctl", "boot", udid, timeout=120)
-    run("xcrun", "simctl", "bootstatus", udid, "-b", timeout=180)
+    ensure_booted(run, udid, chosen["state"] == "Booted")
     temp = Path(os.environ["RUNNER_TEMP"])
     run("xcodebuild", "test", "-project", "SwarmGate.xcodeproj", "-scheme", "SwarmGate",
         "-configuration", "Debug", "-destination", f"platform=iOS Simulator,id={udid}",
