@@ -64,7 +64,8 @@ jobs:
           xcodebuild build -project SwarmGate.xcodeproj -scheme SwarmGate \
             -configuration Debug -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath "$RUNNER_TEMP/SwarmGateDerivedData" CODE_SIGNING_ALLOWED=NO
-          info="$RUNNER_TEMP/SwarmGateDerivedData/Build/Products/Debug-iphonesimulator/SwarmGate.app/Info.plist"
+          sim_app="$RUNNER_TEMP/SwarmGateDerivedData/Build/Products/Debug-iphonesimulator/SwarmGate.app"
+          info="$sim_app/Info.plist"
           [[ -f "$info" ]] || { echo 'Built app Info.plist missing'; exit 1; }
           python3 - "$info" <<'PY'
           import plistlib
@@ -75,6 +76,29 @@ jobs:
           assert info.get('CFBundleIdentifier') == 'com.infinityball.swarmgate', info.get('CFBundleIdentifier')
           print('Built app UIDeviceFamily=[1], CFBundleIdentifier=com.infinityball.swarmgate')
           PY
+          xcodebuild archive -project SwarmGate.xcodeproj -scheme SwarmGate \
+            -configuration Release -destination 'generic/platform=iOS Simulator' \
+            -archivePath "$RUNNER_TEMP/SwarmGateIcon.xcarchive" \
+            -derivedDataPath "$RUNNER_TEMP/SwarmGateIconDerivedData" CODE_SIGNING_ALLOWED=NO
+          app="$RUNNER_TEMP/SwarmGateIcon.xcarchive/Products/Applications/SwarmGate.app"
+          [[ -s "$app/Assets.car" ]] || { echo 'Compiled Assets.car missing from archive'; exit 1; }
+          python3 - "$app/Info.plist" <<'PY'
+          import plistlib
+          import sys
+          with open(sys.argv[1], 'rb') as f:
+              info = plistlib.load(f)
+          assert info.get('UIDeviceFamily') == [1], info.get('UIDeviceFamily')
+          assert info.get('CFBundleIdentifier') == 'com.infinityball.swarmgate', info.get('CFBundleIdentifier')
+          print('Archived app UIDeviceFamily=[1], CFBundleIdentifier=com.infinityball.swarmgate')
+          PY
+          # Xcode 26 single-size icons keep artwork inside Assets.car and may
+          # surface rasters only in actool intermediates; either proof works.
+          if ! compgen -G "$app/AppIcon*.png" >/dev/null; then
+            rasters=$(find "$RUNNER_TEMP/SwarmGateIconDerivedData" -name 'AppIcon*' -type f 2>/dev/null | head -5)
+            [[ -n "$rasters" ]] || { echo 'No compiled AppIcon raster in archive or actool intermediates'; exit 1; }
+            printf 'Compiled AppIcon rasters:\n%s\n' "$rasters"
+          fi
+          echo "Archived app contains compiled Assets.car and AppIcon artwork"
       - name: Simulator menu to run to summary journey
         timeout-minutes: 35
         shell: bash
