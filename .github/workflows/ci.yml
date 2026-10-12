@@ -26,7 +26,7 @@ jobs:
         run: swift test --package-path Packages/SwarmGateStore
   ios-build:
     runs-on: macos-26
-    timeout-minutes: 45 # Leave artifact upload time after bounded sim/test step.
+    timeout-minutes: 60 # Build + icon archive + bounded simulator test + artifact upload.
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: Enforce project contract and mutation tests
@@ -94,9 +94,13 @@ jobs:
           # Xcode 26 single-size icons keep artwork inside Assets.car and may
           # surface rasters only in actool intermediates; either proof works.
           if ! compgen -G "$app/AppIcon*.png" >/dev/null; then
-            rasters=$(find "$RUNNER_TEMP/SwarmGateIconDerivedData" -name 'AppIcon*' -type f 2>/dev/null | head -5)
-            [[ -n "$rasters" ]] || { echo 'No compiled AppIcon raster in archive or actool intermediates'; exit 1; }
-            printf 'Compiled AppIcon rasters:\n%s\n' "$rasters"
+            found=''
+            while IFS= read -r -d '' raster; do
+              found="$raster"
+              break
+            done < <(find "$RUNNER_TEMP/SwarmGateIconDerivedData" -name 'AppIcon*' -type f -print0)
+            [[ -n "$found" ]] || { echo 'No compiled AppIcon raster in archive or actool intermediates'; exit 1; }
+            printf 'Compiled AppIcon raster: %s\n' "$found"
           fi
           echo "Archived app contains compiled Assets.car and AppIcon artwork"
       - name: Simulator menu to run to summary journey
