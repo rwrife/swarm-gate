@@ -22,8 +22,26 @@ class BootTests(unittest.TestCase):
                 raise subprocess.TimeoutExpired(args, kwargs["timeout"])
 
         sim.ensure_booted(fake_run, "test-udid", False)
-        self.assertEqual(calls, [("boot", 120), ("bootstatus", 180),
-                                 ("shutdown", 60), ("boot", 120), ("bootstatus", 180)])
+        self.assertEqual(calls, [("boot", 120), ("bootstatus", 300),
+                                 ("shutdown", 90), ("boot", 120), ("bootstatus", 180)])
+
+    def test_hung_shutdown_still_retries(self):
+        calls = []
+        bootstatuses = 0
+
+        def fake_run(*args, **kwargs):
+            nonlocal bootstatuses
+            calls.append((args[2], kwargs["timeout"]))
+            if args[2] == "bootstatus":
+                bootstatuses += 1
+                if bootstatuses == 1:
+                    raise subprocess.TimeoutExpired(args, kwargs["timeout"])
+            if args[2] == "shutdown":
+                raise subprocess.TimeoutExpired(args, kwargs["timeout"])
+
+        sim.ensure_booted(fake_run, "test-udid", False)
+        self.assertEqual(bootstatuses, 2)
+        self.assertIn(("boot", 120), calls)
 
     def test_second_timeout_propagates(self):
         calls = []

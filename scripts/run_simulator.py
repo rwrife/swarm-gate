@@ -16,24 +16,31 @@ def run(*args, timeout=120, capture=False):
 def ensure_booted(run, udid, already_booted):
     """Boot `udid` and wait for bootstatus, each wait bounded.
 
-    First boot of a runtime fetched via `xcodebuild -downloadPlatform`
-    installs its device image lazily and can exceed one 180s bootstatus
-    window (macos-26 run 38068161640 attempts 2 and 3 timed out at exactly
-    this phase on two different devices). Allow one bounded shutdown and
-    reboot without hiding a second timeout.
+    macos-26 hosted runners time out the 180s bootstatus window here on
+    every job so far (run 38068161640 attempts 2-3, run 38280518348
+    attempt 1; 4 distinct UDIDs, all after a fresh
+    `xcodebuild -downloadPlatform iOS`, whose first boot prepares the
+    device image lazily). First wait gets 300s; one bounded
+    shutdown/reboot retry then gets 180s and a second timeout still
+    fails. shutdown itself has been observed to hang
+    (run 38280518348), so its bounded timeout must not abort the retry.
     """
-    for attempt in (1, 2):
+    for attempt, wait in ((1, 300), (2, 180)):
         try:
             if not already_booted or attempt == 2:
                 run("xcrun", "simctl", "boot", udid, timeout=120)
-            run("xcrun", "simctl", "bootstatus", udid, "-b", timeout=180)
+            run("xcrun", "simctl", "bootstatus", udid, "-b", timeout=wait)
             return
         except subprocess.TimeoutExpired:
-            print(f"simctl bootstatus timed out (attempt {attempt})",
+            print(f"simctl bootstatus timed out after {wait}s (attempt {attempt})",
                   file=sys.stderr, flush=True)
             if attempt == 2:
                 raise
-            run("xcrun", "simctl", "shutdown", udid, timeout=60, capture=True)
+            try:
+                run("xcrun", "simctl", "shutdown", udid, timeout=90, capture=True)
+            except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as exc:
+                print(f"simctl shutdown incomplete ({exc}); boot retry proceeds",
+                      file=sys.stderr, flush=True)
 
 
 def main():
