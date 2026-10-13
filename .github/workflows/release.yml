@@ -42,8 +42,9 @@ jobs:
             fi
           done
           [[ -n "$pick" ]] || { echo 'Exact Xcode 26.0.1 (17A400) unavailable'; exit 1; }
+          export DEVELOPER_DIR="$pick"
           echo "DEVELOPER_DIR=$pick" >> "$GITHUB_ENV"
-          sdk=$(DEVELOPER_DIR="$pick" xcrun --sdk iphoneos --show-sdk-version)
+          sdk=$(xcrun --sdk iphoneos --show-sdk-version)
           [[ "$sdk" == 26.0 ]] || { echo "Expected iPhoneOS SDK 26.0; got $sdk"; exit 1; }
           # Hosted images may ship the pinned Xcode without its iOS platform
           # download; a generic device destination then fails at archive time.
@@ -55,7 +56,8 @@ jobs:
               echo 'Could not inspect build destinations'; exit 1;
             }
           fi
-          if grep -Fq 'is not installed' "$RUNNER_TEMP/destinations.txt"; then
+          if ! grep -Fq 'Any iOS Device' "$RUNNER_TEMP/destinations.txt" || \
+             grep -Fq 'Any iOS Device, error:' "$RUNNER_TEMP/destinations.txt"; then
             echo 'Pinned iOS platform missing; downloading for exact Xcode'
             xcodebuild -downloadPlatform iOS -architectureVariant universal
           fi
@@ -63,9 +65,10 @@ jobs:
             -showdestinations > "$RUNNER_TEMP/destinations-after.txt" 2>&1 || {
               echo 'Pinned iOS platform unavailable after download'; exit 1;
             }
-          grep -Fq 'Any iOS Device' "$RUNNER_TEMP/destinations-after.txt" || {
-            echo 'Pinned iOS device destination unavailable'; exit 1;
-          }
+          if ! grep -Fq 'Any iOS Device' "$RUNNER_TEMP/destinations-after.txt" || \
+             grep -Fq 'Any iOS Device, error:' "$RUNNER_TEMP/destinations-after.txt"; then
+            echo 'Pinned iOS device destination unavailable'; exit 1
+          fi
           echo "Xcode 26.0.1 (17A400), iPhoneOS SDK $sdk"
       - name: Verify version and required secret presence
         env:
