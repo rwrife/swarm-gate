@@ -28,6 +28,7 @@ jobs:
           python3 scripts/check_contract.py
           python3 -m unittest discover -s scripts -p 'test_*.py' -v
       - name: Select exact Xcode and iOS 26 SDK
+        timeout-minutes: 20
         shell: bash
         run: |
           set -euo pipefail
@@ -44,6 +45,27 @@ jobs:
           echo "DEVELOPER_DIR=$pick" >> "$GITHUB_ENV"
           sdk=$(DEVELOPER_DIR="$pick" xcrun --sdk iphoneos --show-sdk-version)
           [[ "$sdk" == 26.0 ]] || { echo "Expected iPhoneOS SDK 26.0; got $sdk"; exit 1; }
+          # Hosted images may ship the pinned Xcode without its iOS platform
+          # download; a generic device destination then fails at archive time.
+          # -showdestinations can exit nonzero when no destination matches.
+          # Inspect its output and fail closed on unrelated errors.
+          if ! xcodebuild -project SwarmGate.xcodeproj -scheme SwarmGate \
+            -showdestinations > "$RUNNER_TEMP/destinations.txt" 2>&1; then
+            grep -Fq 'is not installed' "$RUNNER_TEMP/destinations.txt" || {
+              echo 'Could not inspect build destinations'; exit 1;
+            }
+          fi
+          if grep -Fq 'is not installed' "$RUNNER_TEMP/destinations.txt"; then
+            echo 'Pinned iOS platform missing; downloading for exact Xcode'
+            xcodebuild -downloadPlatform iOS -architectureVariant universal
+          fi
+          xcodebuild -project SwarmGate.xcodeproj -scheme SwarmGate \
+            -showdestinations > "$RUNNER_TEMP/destinations-after.txt" 2>&1 || {
+              echo 'Pinned iOS platform unavailable after download'; exit 1;
+            }
+          grep -Fq 'Any iOS Device' "$RUNNER_TEMP/destinations-after.txt" || {
+            echo 'Pinned iOS device destination unavailable'; exit 1;
+          }
           echo "Xcode 26.0.1 (17A400), iPhoneOS SDK $sdk"
       - name: Verify version and required secret presence
         env:
