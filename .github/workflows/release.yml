@@ -1,0 +1,227 @@
+name: Release (TestFlight)
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      upload:
+        description: Upload to TestFlight (disable for archive dry run)
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  testflight:
+    runs-on: macos-26
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Enforce native offline iPhone contract
+        run: |
+          python3 scripts/check_contract.py
+          python3 -m unittest discover -s scripts -p 'test_*.py' -v
+      - name: Select exact Xcode and iOS 26 SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          pick=''
+          for candidate in /Applications/Xcode*.app/Contents/Developer; do
+            [[ -d "$candidate" ]] || continue
+            version=$(DEVELOPER_DIR="$candidate" xcodebuild -version)
+            if [[ "$version" == $'Xcode 26.0.1\nBuild version 17A400' ]]; then
+              pick="$candidate"
+              break
+            fi
+          done
+          [[ -n "$pick" ]] || { echo 'Exact Xcode 26.0.1 (17A400) unavailable'; exit 1; }
+          echo "DEVELOPER_DIR=$pick" >> "$GITHUB_ENV"
+          sdk=$(DEVELOPER_DIR="$pick" xcrun --sdk iphoneos --show-sdk-version)
+          [[ "$sdk" == 26.0 ]] || { echo "Expected iPhoneOS SDK 26.0; got $sdk"; exit 1; }
+          echo "Xcode 26.0.1 (17A400), iPhoneOS SDK $sdk"
+      - name: Verify version and required secret presence
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          ASC_TEAM_ID: ${{ secrets.ASC_TEAM_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_P8 ASC_TEAM_ID; do
+            [[ -n "${!name:-}" ]] || { echo "::error::Missing $name"; exit 1; }
+          done
+          version=$(python3 -c 'import re; from pathlib import Path; p=Path("SwarmGate.xcodeproj/project.pbxproj").read_text(); v=set(re.findall(r"MARKETING_VERSION = ([^;]+);",p)); assert len(v)==1, v; print(v.pop())')
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            [[ "$GITHUB_REF_NAME" == "v$version" ]] || { echo "Tag must be v$version"; exit 1; }
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "Release version $version, build $GITHUB_RUN_NUMBER"
+      - name: Write ASC key to runner temp (mode 600)
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p "$RUNNER_TEMP/asc"
+          printf '%s' "$ASC_KEY_P8" | sed 's/\\n/\n/g' > "$RUNNER_TEMP/asc/AuthKey.p8"
+          chmod 600 "$RUNNER_TEMP/asc/AuthKey.p8"
+          [[ -s "$RUNNER_TEMP/asc/AuthKey.p8" && $(stat -f %Lp "$RUNNER_TEMP/asc/AuthKey.p8") == 600 ]]
+          echo 'ASC key ready (mode 600)'
+      - name: Archive signed iPhone app
+        timeout-minutes: 30
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_TEAM_ID: ${{ secrets.ASC_TEAM_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild archive -project SwarmGate.xcodeproj -scheme SwarmGate \
+            -configuration Release -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/SwarmGate.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/asc/AuthKey.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            DEVELOPMENT_TEAM="$ASC_TEAM_ID" CODE_SIGN_STYLE=Automatic \
+            CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES \
+            CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER" MARKETING_VERSION="$VERSION"
+          app="$RUNNER_TEMP/SwarmGate.xcarchive/Products/Applications/SwarmGate.app"
+          python3 - "$app/Info.plist" <<'PY'
+          import plistlib, sys
+          with open(sys.argv[1], 'rb') as f:
+              info = plistlib.load(f)
+          assert info.get('UIDeviceFamily') == [1], info.get('UIDeviceFamily')
+          assert info.get('CFBundleIdentifier') == 'com.infinityball.swarmgate'
+          print('Signed archive UIDeviceFamily=[1], CFBundleIdentifier=com.infinityball.swarmgate')
+          PY
+          test -s "$app/Assets.car"
+          codesign --verify --deep --strict "$app"
+      - name: Export signed IPA and upload
+        timeout-minutes: 20
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_TEAM_ID: ${{ secrets.ASC_TEAM_ID }}
+          UPLOAD: ${{ inputs.upload != false }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "$UPLOAD" "$ASC_TEAM_ID" "$RUNNER_TEMP/ExportOptions.plist" <<'PY'
+          import plistlib, sys
+          upload = sys.argv[1] == 'true'
+          options = {'method': 'app-store-connect', 'signingStyle': 'automatic',
+                     'manageAppVersionAndBuildNumber': False, 'uploadSymbols': True,
+                     'teamID': sys.argv[2], 'destination': 'upload' if upload else 'export'}
+          if upload:
+              options['uploadMethod'] = 'app-store-connect'
+          with open(sys.argv[3], 'wb') as f:
+              plistlib.dump(options, f)
+          print('Export destination:', options['destination'])
+          PY
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/SwarmGate.xcarchive" \
+            -exportPath "$RUNNER_TEMP/ipa" -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -allowProvisioningUpdates -authenticationKeyPath "$RUNNER_TEMP/asc/AuthKey.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+      - name: Wait for processed TestFlight build
+        if: ${{ inputs.upload != false }}
+        timeout-minutes: 20
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_PATH: ${{ runner.temp }}/asc/AuthKey.p8
+          ASC_BUILD_NUMBER: ${{ github.run_number }}
+          ASC_VERSION: ${{ env.VERSION }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/asc-venv"
+          "$RUNNER_TEMP/asc-venv/bin/pip" install --quiet 'pyjwt[crypto]'
+          "$RUNNER_TEMP/asc-venv/bin/python3" - <<'PY'
+          import json, os, sys, time, urllib.parse, urllib.request
+          import jwt
+          with open(os.environ['ASC_KEY_PATH']) as f:
+              key = f.read()
+          def api(path, params):
+              now = int(time.time())
+              token = jwt.encode({'iss': os.environ['ASC_ISSUER_ID'], 'aud': 'appstoreconnect-v1',
+                                  'iat': now, 'exp': now + 600}, key, algorithm='ES256',
+                                 headers={'kid': os.environ['ASC_KEY_ID']})
+              url = 'https://api.appstoreconnect.apple.com' + path + '?' + urllib.parse.urlencode(params)
+              req = urllib.request.Request(url, headers={'Authorization': 'Bearer ' + token})
+              with urllib.request.urlopen(req, timeout=30) as response:
+                  return json.load(response)['data']
+          apps = api('/v1/apps', {'filter[bundleId]': 'com.infinityball.swarmgate'})
+          if len(apps) != 1:
+              sys.exit('Expected one App Store Connect app for com.infinityball.swarmgate')
+          app_id = apps[0]['id']
+          wanted = os.environ['ASC_BUILD_NUMBER']
+          deadline = time.monotonic() + 15 * 60
+          while time.monotonic() < deadline:
+              builds = api('/v1/builds', {'filter[app]': app_id, 'sort': '-uploadedDate', 'limit': 50})
+              match = next((b for b in builds if b['attributes'].get('version') == wanted), None)
+              if match:
+                  state = match['attributes'].get('processingState')
+                  print(f"Build {match['id']} processingState={state}", flush=True)
+                  if state in ('VALID', 'COMPLETE'):
+                      evidence = {'app_id': app_id, 'build_id': match['id'],
+                                  'version': os.environ['ASC_VERSION'],
+                                  'build_number': wanted, 'processing_state': state}
+                      with open(os.environ['RUNNER_TEMP'] + '/processed-build.json', 'w') as f:
+                          json.dump(evidence, f)
+                      break
+                  if state in ('FAILED', 'INVALID'):
+                      sys.exit('TestFlight processing failed: ' + state)
+              time.sleep(30)
+          else:
+              sys.exit('Timed out waiting for processed TestFlight build')
+          PY
+      - name: Upload processed-build evidence
+        if: ${{ inputs.upload != false && success() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: swarm-gate-processed-build
+          path: ${{ runner.temp }}/processed-build.json
+          if-no-files-found: error
+      - name: Remove ASC key material
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/asc" "$RUNNER_TEMP/asc-venv"
+
+  github-release:
+    needs: testflight
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: swarm-gate-processed-build
+          path: evidence
+      - name: Publish release with real TestFlight evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s evidence/processed-build.json
+          python3 - "$GITHUB_REF_NAME" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" > "$RUNNER_TEMP/release-notes.md" <<'PY'
+          import json, sys
+          with open('evidence/processed-build.json') as f:
+              e = json.load(f)
+          assert sys.argv[1] == 'v' + e['version']
+          assert e['processing_state'] in ('VALID', 'COMPLETE')
+          print(f"Swarm Gate {sys.argv[1]} — offline iPhone zombie-wave lane defense.\n")
+          print(f"TestFlight build ID: {e['build_id']} (build {e['build_number']}, processing {e['processing_state']})")
+          print(f"Release workflow: https://github.com/{sys.argv[2]}/actions/runs/{sys.argv[3]}")
+          PY
+          gh release create "$GITHUB_REF_NAME" --title "Swarm Gate $GITHUB_REF_NAME" \
+            --notes-file "$RUNNER_TEMP/release-notes.md"
